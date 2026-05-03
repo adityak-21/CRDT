@@ -1,20 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Document, Operation, ConflictInfo } from "../crdt";
-import { saveOperation, loadOperations } from "./storage";
+import { RGA, RGAOperation } from "../crdt/rga";
 
 function generateNodeId(): string {
   return "user-" + Math.random().toString(36).slice(2, 6);
 }
 
 const USER_COLORS = [
-  "#3b82f6", // blue
-  "#ef4444", // red
-  "#10b981", // green
-  "#f59e0b", // amber
-  "#8b5cf6", // purple
-  "#ec4899", // pink
-  "#06b6d4", // cyan
-  "#f97316", // orange
+  "#3b82f6", "#ef4444", "#10b981", "#f59e0b",
+  "#8b5cf6", "#ec4899", "#06b6d4", "#f97316",
 ];
 
 function getRandomColor(): string {
@@ -23,49 +16,44 @@ function getRandomColor(): string {
 
 export interface CursorInfo {
   nodeId: string;
-  x: number;
-  y: number;
+  position: number;
   color: string;
 }
 
-export function useDocument(roomId: string) {
+export function useRGA(roomId: string) {
   const nodeId = useRef(generateNodeId()).current;
   const userColor = useRef(getRandomColor()).current;
-  const docRef = useRef(new Document(nodeId));
-  const [docState, setDocState] = useState<Record<string, unknown>>({});
+  const rgaRef = useRef(new RGA(nodeId));
+  const [text, setText] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
   const [connected, setConnected] = useState(false);
-  const [conflicts, setConflicts] = useState<ConflictInfo[]>([]);
-  const offlineQueue = useRef<Operation[]>([]);
+  const offlineQueue = useRef<RGAOperation[]>([]);
   const reconnectAttempt = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [loading, setLoading] = useState(true);
   const [cursors, setCursors] = useState<Map<string, CursorInfo>>(new Map());
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
+  const [stats, setStats] = useState({ chars: 0, tombstones: 0, ops: 0 });
+  const opsCount = useRef(0);
 
-  useEffect(() => {
-    async function loadFromStorage() {
-      const savedOps = await loadOperations(roomId);
-      if (savedOps.length > 0) {
-        for (const op of savedOps) {
-          docRef.current.apply(op);
-        }
-        setDocState(docRef.current.toJSON());
-        setConflicts(docRef.current.getAllConflicts());
-      }
-      setLoading(false);
-    }
-    loadFromStorage();
-  }, [roomId, nodeId]);
+  const syncState = useCallback(() => {
+    const rga = rgaRef.current;
+    const allNodes = rga.getAllNodes();
+    setText(rga.toString());
+    setStats({
+      chars: rga.length,
+      tombstones: allNodes.filter((n) => n.deleted).length,
+      ops: opsCount.current,
+    });
+  }, []);
 
   const flushQueue = useCallback(() => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     for (const op of offlineQueue.current) {
-      ws.send(JSON.stringify({ type: "operation", operation: op }));
+      ws.send(JSON.stringify({ type: "rga-operation", operation: op }));
     }
     offlineQueue.current = [];
-  }, [nodeId]);
+  }, []);
 
   const connect = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
@@ -88,21 +76,19 @@ export function useDocument(roomId: string) {
     ws.onmessage = (event: MessageEvent) => {
       const message = JSON.parse(event.data);
 
-      if (message.type === "sync") {
-        for (const op of message.operations as Operation[]) {
-          docRef.current.apply(op);
-          saveOperation(roomId, op);
+      if (message.type === "rga-sync") {
+        for (const op of message.operations as RGAOperation[]) {
+          rgaRef.current.apply(op);
+          opsCount.current++;
         }
-        setDocState(docRef.current.toJSON());
-        setConflicts(docRef.current.getAllConflicts());
+        syncState();
       }
 
-      if (message.type === "operation") {
-        const op = message.operation as Operation;
-        docRef.current.apply(op);
-        saveOperation(roomId, op);
-        setDocState(docRef.current.toJSON());
-        setConflicts(docRef.current.getAllConflicts());
+      if (message.type === "rga-operation") {
+        const op = message.operation as RGAOperation;
+        rgaRef.current.apply(op);
+        opsCount.current++;
+        syncState();
       }
 
       if (message.type === "cursor") {
@@ -110,8 +96,7 @@ export function useDocument(roomId: string) {
           const next = new Map(prev);
           next.set(message.nodeId, {
             nodeId: message.nodeId,
-            x: message.x,
-            y: message.y,
+            position: message.position,
             color: message.color,
           });
           return next;
@@ -140,10 +125,8 @@ export function useDocument(roomId: string) {
       }, delay);
     };
 
-    ws.onerror = () => {
-      ws.close();
-    };
-  }, [nodeId, roomId, flushQueue]);
+    ws.onerror = () => ws.close();
+  }, [nodeId, roomId, flushQueue, syncState]);
 
   useEffect(() => {
     connect();
@@ -156,31 +139,46 @@ export function useDocument(roomId: string) {
     };
   }, [connect]);
 
-  const edit = useCallback(
-    (field: string, value: unknown) => {
-      const op = docRef.current.set(field, value);
-      setDocState(docRef.current.toJSON());
-      setConflicts(docRef.current.getAllConflicts());
-      saveOperation(roomId, op);
+  const insert = useCallback(
+    (position: number, char: string) => {
+      const op = rgaRef.current.insertAt(position, char);
+      opsCount.current++;
+      syncState();
 
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: "operation", operation: op }));
+        wsRef.current.send(JSON.stringify({ type: "rga-operation", operation: op }));
       } else {
         offlineQueue.current.push(op);
       }
     },
-    [nodeId, roomId]
+    [syncState]
+  );
+
+  const remove = useCallback(
+    (position: number) => {
+      const op = rgaRef.current.deleteAt(position);
+      if (op) {
+        opsCount.current++;
+        syncState();
+
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: "rga-operation", operation: op }));
+        } else {
+          offlineQueue.current.push(op);
+        }
+      }
+    },
+    [syncState]
   );
 
   const sendCursor = useCallback(
-    (x: number, y: number) => {
+    (position: number) => {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(
           JSON.stringify({
             type: "cursor",
             nodeId,
-            x,
-            y,
+            position,
             color: userColor,
           })
         );
@@ -189,23 +187,17 @@ export function useDocument(roomId: string) {
     [nodeId, userColor]
   );
 
-  const dismissConflict = useCallback((field: string) => {
-    docRef.current.dismissConflict(field);
-    setConflicts(docRef.current.getAllConflicts());
-  }, []);
-
   return {
-    doc: docState,
-    edit,
+    text,
+    insert,
+    remove,
     connected,
     nodeId,
     userColor,
-    conflicts,
-    dismissConflict,
-    offlineQueueSize: offlineQueue.current.length,
-    loading,
     cursors,
     sendCursor,
     onlineUsers,
+    stats,
+    offlineQueueSize: offlineQueue.current.length,
   };
 }

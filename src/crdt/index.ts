@@ -5,3 +5,5 @@ export { ORSet } from "./or-set";
 export { VectorClock } from "./vector-clock";
 export { Document } from "./document";
 export type { Operation, ConflictInfo } from "./document";
+export { RGA } from "./rga";
+export type { RGANode, RGAOperation, CharId } from "./rga";

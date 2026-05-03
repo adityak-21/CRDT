@@ -4,15 +4,17 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "server": "npx ts-node src/server.ts",
-    "dev": "npx vite",
-    "test": "npx vitest run --config vitest.config.ts",
-    "test:watch": "npx vitest --config vitest.config.ts"
+    "dev": "vite",
+    "build": "vite build",
+    "server": "npx tsx src/server.ts",
+    "start": "npx tsx src/prodServer.ts",
+    "test": "npx vitest run --config vitest.config.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^25.6.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -24,8 +26,11 @@
     "vitest": "^1.6.0"
   },
   "dependencies": {
+    "express": "^5.2.1",
+    "idb": "^8.0.3",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
+    "react-router-dom": "^7.14.2",
     "ws": "^8.20.0"
   }
 }
