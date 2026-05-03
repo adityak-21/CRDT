@@ -241,4 +241,39 @@ export class RGA {
         timestamp: 0,
         }));
     }
+
+    garbageCollect(safeBefore: number): number {
+        const toRemove: Set<number> = new Set();
+    
+        for (let i = 0; i < this.nodes.length; i++) {
+        const node = this.nodes[i];
+        if (
+            node.deleted &&
+            node.id.counter < safeBefore &&
+            !this.hasLiveChildren(node)
+        ) {
+            toRemove.add(i);
+        }
+        }
+    
+        if (toRemove.size === 0) return 0;
+    
+        this.nodes = this.nodes.filter((_, i) => !toRemove.has(i));
+        this.rebuildIndex();
+        return toRemove.size;
+    }
+
+    private hasLiveChildren(node: RGANode): boolean {
+        for (const other of this.nodes) {
+        if (
+            !other.deleted &&
+            other.parentId &&
+            other.parentId.nodeId === node.id.nodeId &&
+            other.parentId.counter === node.id.counter
+        ) {
+            return true;
+        }
+        }
+        return false;
+    }
 }

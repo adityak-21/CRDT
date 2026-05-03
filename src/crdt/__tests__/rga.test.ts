@@ -245,3 +245,44 @@ describe("RGA — Replicated Growable Array", () => {
     expect(rga.length).toBe(1);
   });
 });
+
+describe("garbage collection", () => {
+    it("should collect tombstones with no live children", () => {
+        const rga = new RGA("alice");
+      
+        // Insert "abc"
+        rga.insertAt(0, "a");
+        rga.insertAt(1, "b");
+        rga.insertAt(2, "c");
+      
+        // Delete "c" (last char — no children)
+        rga.deleteAt(2);
+      
+        expect(rga.toString()).toBe("ab");
+        const before = rga.getAllNodes();
+        expect(before.filter(n => n.deleted).length).toBe(1);
+      
+        const collected = rga.garbageCollect(100);
+        expect(collected).toBe(1);
+      
+        expect(rga.toString()).toBe("ab");
+        expect(rga.getAllNodes().filter(n => n.deleted).length).toBe(0);
+      });
+  
+    it("should NOT collect tombstones with live children", () => {
+      const rga = new RGA("alice");
+  
+      // Insert "ab"
+      rga.insertAt(0, "a");
+      rga.insertAt(1, "b");
+  
+      // Delete "a" — but "b" references "a" as parent
+      rga.deleteAt(0);
+  
+      expect(rga.toString()).toBe("b");
+  
+      // Try GC — should NOT collect "a" because "b" references it
+      const collected = rga.garbageCollect(100);
+      expect(collected).toBe(0);
+    });
+});
