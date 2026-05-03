@@ -4,4 +4,4 @@ export { LWWRegister } from "./lww-register";
 export { ORSet } from "./or-set";
 export { VectorClock } from "./vector-clock";
 export { Document } from "./document";
-export type { Operation } from "./document";
+export type { Operation, ConflictInfo } from "./document";

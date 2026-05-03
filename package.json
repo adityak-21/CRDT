@@ -6,7 +6,8 @@
   "scripts": {
     "server": "npx ts-node src/server.ts",
     "dev": "npx vite",
-    "test": "npx ts-node src/test.ts"
+    "test": "npx vitest run --config vitest.config.ts",
+    "test:watch": "npx vitest --config vitest.config.ts"
   },
   "keywords": [],
   "author": "",
@@ -16,10 +17,11 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.18.1",
-    "@vitejs/plugin-react": "^6.0.1",
+    "@vitejs/plugin-react": "^4.7.0",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3",
-    "vite": "^8.0.10"
+    "vite": "^5.4.21",
+    "vitest": "^1.6.0"
   },
   "dependencies": {
     "react": "^19.2.5",
